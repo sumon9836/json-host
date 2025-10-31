@@ -1,5 +1,6 @@
-// pages/api/upload.js
-import { getDatabase } from '../../lib/firebaseAdmin';
+
+import { getDatabase, ref, set } from 'firebase/database';
+import { database } from '../../lib/firebaseClient';
 import { nanoid } from 'nanoid';
 
 const AUTO_SLUG_LENGTH = 8;
@@ -10,16 +11,12 @@ export default async function handler(req, res) {
       return res.status(405).json({ success: false, error: 'Method not allowed' });
     }
 
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    const raw = Buffer.concat(chunks).toString('utf8');
-    const data = JSON.parse(raw);
+    const { slug: customSlug, payload } = req.body;
 
-    const slug = (data.slug || nanoid(AUTO_SLUG_LENGTH)).toLowerCase();
-    const payload = data.payload || data;
+    const slug = (customSlug || nanoid(AUTO_SLUG_LENGTH)).toLowerCase();
 
-    const db = getDatabase().ref(`jsons/${slug}`);
-    await db.set({
+    const dbRef = ref(database, `jsons/${slug}`);
+    await set(dbRef, {
       createdAt: Date.now(),
       payload,
     });
@@ -33,6 +30,6 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ success: false, data: { error: err.message } });
+    return res.status(500).json({ success: false, error: err.message });
   }
 }
