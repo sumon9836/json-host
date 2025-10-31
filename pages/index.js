@@ -10,6 +10,18 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const handleDownload = () => {
+    const blob = new Blob([result], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'response.json';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleUpload = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -91,6 +103,9 @@ export default function Home() {
             <div className="result-box">
               <h3>✅ Success!</h3>
               <pre>{result}</pre>
+              <button onClick={handleDownload} className="download-btn">
+                📥 Download JSON
+              </button>
             </div>
           )}
         </div>
@@ -221,6 +236,23 @@ export default function Home() {
             overflow-x: auto;
             color: #2d3748;
             font-size: 13px;
+          }
+          
+          .download-btn {
+            margin-top: 12px;
+            padding: 10px 20px;
+            background: #48bb78;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+          }
+          
+          .download-btn:hover {
+            background: #38a169;
           }
           
           @media (max-width: 640px) {
