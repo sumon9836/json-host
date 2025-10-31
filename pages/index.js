@@ -3,57 +3,54 @@ import { useState } from 'react';
 
 export default function Home() {
   const [slug, setSlug] = useState('');
-  const [jsonText, setJsonText] = useState('{}');
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [payload, setPayload] = useState('{\n  "name": "plugin",\n  "type": "whatsapp"\n}');
+  const [result, setResult] = useState('');
 
-  async function handleUpload(e) {
+  const handleUpload = async (e) => {
     e.preventDefault();
-    setLoading(true);
     try {
-      const payload = JSON.parse(jsonText);
-      const body = { slug: slug || undefined, payload };
+      const jsonData = JSON.parse(payload);
       const res = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify({ slug, payload: jsonData }),
       });
       const data = await res.json();
-      setResult({ success: res.ok, data });
+      setResult(JSON.stringify(data, null, 2));
     } catch (err) {
-      setResult({ success: false, data: err.message || String(err) });
-    } finally {
-      setLoading(false);
+      setResult(JSON.stringify({ success: false, error: err.message }, null, 2));
     }
-  }
+  };
 
   return (
-    <main style={{ maxWidth: 900, margin: '30px auto', fontFamily: 'system-ui, sans-serif' }}>
-      <h1>JSON Upload → Firebase RTDB → Public Slug</h1>
-
+    <div style={{ padding: 20, fontFamily: 'monospace' }}>
+      <h2>JSON Upload → Firebase RTDB → Public Slug</h2>
       <form onSubmit={handleUpload}>
-        <label>Custom slug (optional):</label>
-        <input value={slug} onChange={(e)=>setSlug(e.target.value)} placeholder="my-slug" />
-
-        <label>JSON payload:</label>
-        <textarea rows={12} value={jsonText} onChange={(e)=>setJsonText(e.target.value)} style={{width:'100%'}} />
-
-        <button type="submit" disabled={loading}>
-          {loading ? 'Uploading…' : 'Upload'}
-        </button>
+        <label>
+          Custom slug (optional):&nbsp;
+          <input
+            type="text"
+            placeholder="my-slug"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+          />
+        </label>
+        <br />
+        <label>
+          JSON payload:
+          <br />
+          <textarea
+            rows="10"
+            cols="50"
+            value={payload}
+            onChange={(e) => setPayload(e.target.value)}
+          />
+        </label>
+        <br />
+        <button type="submit">Upload</button>
       </form>
-
-      {result && (
-        <div style={{ marginTop: 20 }}>
-          <h3>Result</h3>
-          <pre>{JSON.stringify(result, null, 2)}</pre>
-          {result.success && result.data?.url && (
-            <div>
-              <a href={result.data.url} target="_blank" rel="noreferrer">Open JSON</a>
-            </div>
-          )}
-        </div>
-      )}
-    </main>
+      <h3>Result</h3>
+      <pre>{result}</pre>
+    </div>
   );
-}
+} 
