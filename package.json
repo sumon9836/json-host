@@ -8,6 +8,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "adm-zip": "^0.5.9",
+    "archiver": "^5.3.1",
     "firebase": "^12.5.0",
     "firebase-admin": "^13.5.0",
     "formidable": "^3.5.4",

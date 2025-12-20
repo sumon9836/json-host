@@ -11,7 +11,16 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
   const [viewSlug, setViewSlug] = useState('');
   const [viewedData, setViewedData] = useState('');
+  const [viewedRecord, setViewedRecord] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [folderFiles, setFolderFiles] = useState(null);
+  const [ttlMinutes, setTtlMinutes] = useState(60); // default expiry for auth uploads (minutes)
+
+  // Parsed upload result object (keeps slug, url, expiresAt)
+  const [uploadedResult, setUploadedResult] = useState(null);
+
+  // View type: 'json' or 'auth' determines which API to call when viewing a slug
+  const [viewType, setViewType] = useState('json');
 
   const handleCopy = async (text) => {
     try {
@@ -68,8 +77,10 @@ export default function Home() {
       const data = await res.json();
       
       if (data.success) {
+        setUploadedResult(data);
         setResult(JSON.stringify(data, null, 2));
       } else {
+        setUploadedResult(null);
         setError(data.error || 'Upload failed');
       }
     } catch (err) {
@@ -82,26 +93,175 @@ export default function Home() {
   const handleViewJson = async (e) => {
     e.preventDefault();
     if (!viewSlug) return;
-    
+
     setViewedData('');
+    setViewedRecord(null);
     setError('');
-    
+
     try {
-      const res = await fetch(`/${viewSlug}`);
+      const path = viewType === 'auth' ? `/api/auth/${viewSlug}` : `/api/${viewSlug}`;
+      const res = await fetch(path);
       if (res.ok) {
         const data = await res.json();
+        setViewedRecord(data);
         setViewedData(JSON.stringify(data, null, 2));
+      } else if (res.status === 410) {
+        setError('Entry expired');
       } else {
-        setError('JSON not found with that slug');
+        setError('Not found');
       }
     } catch (err) {
-      setError('Failed to fetch JSON: ' + err.message);
+      setError('Failed to fetch: ' + err.message);
+    }
+  };
+
+  const formatDate = (ts) => {
+    try {
+      return new Date(ts).toLocaleString();
+    } catch (e) {
+      return String(ts);
+    }
+  };
+
+  const getUploadedSlug = () => {
+    if (uploadedResult && uploadedResult.slug) return uploadedResult.slug;
+    try {
+      const parsed = JSON.parse(result || '{}');
+      return parsed.slug;
+    } catch (e) {
+      return null;
     }
   };
 
   const getPublicUrl = () => {
-    const parsed = JSON.parse(result);
-    return `${window.location.origin}/${parsed.slug}`;
+    const slugVal = getUploadedSlug();
+    if (!slugVal) return '';
+    return `${window.location.origin}/${slugVal}`;
+  };
+
+  const flattenFiles = (obj, base = '') => {
+    const out = [];
+    for (const k of Object.keys(obj || {})) {
+      const v = obj[k];
+      if (v && typeof v === 'object' && !('type' in v) && !Array.isArray(v)) {
+        out.push(...flattenFiles(v, `${base}${k}/`));
+      } else {
+        out.push({ path: `${base}${k}`, type: (v && v.type) || 'file' });
+      }
+    }
+    return out;
+  };
+
+  const handleUploadFolder = async (e) => {
+    e.preventDefault();
+    if (!folderFiles || folderFiles.length === 0) {
+      setError('No files selected');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setResult('');
+
+    try {
+      const fd = new FormData();
+      if (slug) fd.append('slug', slug);
+
+      for (const file of Array.from(folderFiles)) {
+        const filename = file.webkitRelativePath || file.name;
+        fd.append('files[]', file, filename);
+      }
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: fd,
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setUploadedResult(data);
+        setResult(JSON.stringify(data, null, 2));
+      } else {
+        setUploadedResult(null);
+        setError(data.error || 'Upload failed');
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownloadZip = () => {
+    try {
+      const slugValue = getUploadedSlug();
+      if (!slugValue) return setError('No slug available for download');
+      const url = `/api/${slugValue}?download=1`;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${slugValue}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      setError('No slug available for download');
+    }
+  };
+
+  const handleUploadAuthFolder = async () => {
+    if (!folderFiles || folderFiles.length === 0) {
+      setError('No files selected');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setResult('');
+
+    try {
+      const fd = new FormData();
+      if (slug) fd.append('slug', slug);
+      if (ttlMinutes) fd.append('ttl', String(ttlMinutes * 60));
+
+      for (const file of Array.from(folderFiles)) {
+        const filename = file.webkitRelativePath || file.name;
+        fd.append('files[]', file, filename);
+      }
+
+      const res = await fetch('/api/auth/upload', {
+        method: 'POST',
+        body: fd,
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setUploadedResult(data);
+        setResult(JSON.stringify(data, null, 2));
+      } else {
+        setUploadedResult(null);
+        setError(data.error || 'Upload failed');
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownloadAuthZip = () => {
+    try {
+      const slugValue = getUploadedSlug();
+      if (!slugValue) return setError('No slug available for download');
+      const url = `/api/auth/${slugValue}?download=1`;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${slugValue}-auth.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      setError('No slug available for download');
+    }
   };
 
   return (
@@ -155,17 +315,78 @@ export default function Home() {
           <div className="divider">
             <span>OR</span>
           </div>
+
+          <form onSubmit={handleUploadFolder}>
+            <div className="form-group">
+              <label htmlFor="folder">Upload Folder (select a folder)</label>
+              <input
+                id="folder"
+                type="file"
+                webkitdirectory="true"
+                directory="true"
+                multiple
+                onChange={(e) => setFolderFiles(e.target.files)}
+              />
+              <small>You can select a folder (Chrome/Edge). All files inside will be uploaded keeping relative paths.</small>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="slugFolder">Custom Slug (optional)</label>
+              <input
+                id="slugFolder"
+                type="text"
+                placeholder="my-folder-slug"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="ttlMinutes">Auth TTL (minutes)</label>
+              <input
+                id="ttlMinutes"
+                type="number"
+                min="1"
+                value={ttlMinutes}
+                onChange={(e) => setTtlMinutes(Number(e.target.value))}
+                disabled={loading}
+              />
+              <small>Uploaded auth ZIP will be auto-deleted after this many minutes (default 60).</small>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="submit" className="submit-btn" disabled={loading}>
+                {loading ? '⏳ Uploading...' : '📁 Upload Folder'}
+              </button>
+
+              <button
+                type="button"
+                className="submit-btn"
+                onClick={handleUploadAuthFolder}
+                disabled={loading}
+                title="Upload selected folder as Baileys auth ZIP"
+              >
+                {loading ? '⏳ Uploading...' : '🔐 Upload as Baileys Auth'}
+              </button>
+            </div>
+          </form>
           
           <form onSubmit={handleViewJson}>
             <div className="form-group">
-              <label htmlFor="viewSlug">View Existing JSON by Slug</label>
-              <div className="input-group">
+              <label htmlFor="viewSlug">View by Slug</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select value={viewType} onChange={(e) => setViewType(e.target.value)} style={{ padding: 8, borderRadius: 6 }}>
+                  <option value="json">JSON / Folder</option>
+                  <option value="auth">Baileys Auth</option>
+                </select>
                 <input
                   id="viewSlug"
                   type="text"
                   placeholder="Enter slug to view"
                   value={viewSlug}
                   onChange={(e) => setViewSlug(e.target.value)}
+                  style={{ flex: 1 }}
                 />
                 <button type="submit" className="view-btn">
                   🔍 View
@@ -180,29 +401,90 @@ export default function Home() {
             </div>
           )}
           
-          {result && (
+          {uploadedResult && (
             <div className="result-box">
-              <h3>✅ Success!</h3>
-              <pre>{result}</pre>
-              <div className="action-buttons">
-                <button onClick={handleDownload} className="action-btn download">
-                  📥 Download JSON
-                </button>
-                <button 
-                  onClick={() => handleCopy(getPublicUrl())} 
-                  className="action-btn copy"
-                >
-                  {copied ? '✓ Copied!' : '📋 Copy URL'}
+              <h3>✅ Upload Success</h3>
+
+              <div style={{ marginBottom: 8 }}>
+                <strong>Slug:</strong> {uploadedResult.slug} {' '}
+                <button className="action-btn copy" style={{ padding: '6px 10px', minWidth: 80 }} onClick={() => handleCopy(uploadedResult.slug)}>
+                  {copied ? '✓ Copied!' : 'Copy'}
                 </button>
               </div>
+
+              <div style={{ marginBottom: 8 }}>
+                <strong>URL:</strong> <a href={uploadedResult.url} target="_blank" rel="noreferrer">{uploadedResult.url}</a> {' '}
+                <button className="action-btn copy" style={{ padding: '6px 10px', minWidth: 120 }} onClick={() => handleCopy(window.location.origin + uploadedResult.url)}>
+                  {copied ? '✓ Copied!' : 'Copy URL'}
+                </button>
+              </div>
+
+              {uploadedResult.expiresAt && (
+                <div style={{ marginBottom: 12 }}><strong>Expires:</strong> {formatDate(uploadedResult.expiresAt)}</div>
+              )}
+
+              <div className="action-buttons" style={{ marginBottom: 12 }}>
+                {/* If uploadedResult url references auth API, show auth download */}
+                {uploadedResult.url && uploadedResult.url.includes('/api/auth') && (
+                  <button onClick={handleDownloadAuthZip} className="action-btn download">🔐 Download Auth ZIP</button>
+                )}
+
+                {uploadedResult.url && !uploadedResult.url.includes('/api/auth') && (
+                  <>
+                    <button onClick={handleDownload} className="action-btn download">📥 Download JSON</button>
+                    <button onClick={handleDownloadZip} className="action-btn download">📦 Download ZIP</button>
+                  </>
+                )}
+              </div>
+
+              <pre style={{ maxHeight: 260, overflow: 'auto' }}>{result}</pre>
             </div>
           )}
           
-          {viewedData && (
+          {viewedRecord && (
             <div className="result-box view-box">
-              <h3>📄 Viewed JSON</h3>
-              <pre>{viewedData}</pre>
-              <button onClick={() => handleCopy(viewedData)} className="action-btn copy">
+              <h3>📄 Viewed Record</h3>
+
+              <div style={{ marginBottom: 8 }}>
+                <strong>Slug:</strong> {viewedRecord.slug || viewSlug}
+                {viewedRecord.expiresAt && (
+                  <span style={{ marginLeft: 12 }}><strong>Expires:</strong> {formatDate(viewedRecord.expiresAt)}</span>
+                )}
+              </div>
+
+              {viewedRecord.payload && (
+                <div style={{ marginBottom: 12 }}>
+                  <strong>Payload:</strong>
+                  <pre style={{ maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(viewedRecord.payload, null, 2)}</pre>
+                </div>
+              )}
+
+              {viewedRecord.files && (
+                <div style={{ marginBottom: 12 }}>
+                  <strong>Files:</strong>
+                  <ul>
+                    {flattenFiles(viewedRecord.files).map((f) => (
+                      <li key={f.path}>
+                        {f.path} ({f.type})
+                      </li>
+                    ))}
+                  </ul>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => {
+                      const slugValue = viewSlug; // may be "auth/slug" namespace handled separate
+                      const url = viewType === 'auth' ? `/api/auth/${slugValue}?download=1` : `/api/${slugValue}?download=1`;
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.download = `${slugValue}.zip`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }} className="action-btn download">📦 Download ZIP</button>
+                  </div>
+                </div>
+              )}
+
+              <button onClick={() => handleCopy(JSON.stringify(viewedRecord, null, 2))} className="action-btn copy">
                 {copied ? '✓ Copied!' : '📋 Copy JSON'}
               </button>
             </div>
